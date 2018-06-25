@@ -57,7 +57,7 @@ def __load_data(submit_file, reference_file):
 
 def __eval_result(submit_dict, ref_dict):
     # eval accuracy
-
+    result = {'error': [], 'warning': [], 'score': None}
     right_count = 0
     for (key, value) in ref_dict.items():
 
@@ -89,7 +89,7 @@ if __name__ == '__main__':
     PARSER.add_argument(
         '--ref',
         type=str,
-        default='./ref.json',
+        default='..\\ai_challenger_scene_test_a_20180103\\scene_test_a_annotations_20180103.json',
         help="""\
         Path to reference file\
         """

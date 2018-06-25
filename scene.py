@@ -61,6 +61,8 @@ import os
 import scene_input
 import network
 
+import scene_eval
+
 BATCH_SIZE = 32
 IMAGE_SIZE = 128
 IMAGE_CHANNEL = 3
@@ -68,24 +70,46 @@ CHECKFILE = './checkpoint/model.ckpt'
 LOGNAME = 'scene'
 
 
-def train(train_dir, annotations, max_step, checkpoint_dir='./checkpoint/'):
+def train(
+    train_dir,
+    annotations,
+    max_step,
+    test_dir,
+    reference_file,
+    checkpoint_dir='./checkpoint/',):
     # train the model
     scene_data = scene_input.scene_data_fn(train_dir, annotations)
-    features = tf.placeholder("float32", shape=[None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL], name="features")
+    features = tf.placeholder(
+        "float32", shape=[None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL], name="features")
     labels = tf.placeholder("float32", [None], name="labels")
     one_hot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=80)
-    train_step, cross_entropy, logits, keep_prob = network.inference(features, one_hot_labels)
-    correct_prediction = tf.equal(tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
+    train_step, cross_entropy, logits, keep_prob = network.inference(
+        features, one_hot_labels)
+    correct_prediction = tf.equal(
+        tf.argmax(logits, 1), tf.argmax(one_hot_labels, 1))
     accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
+
+    # add test images
+    test_images = os.listdir(test_dir)
+    values, indices = tf.nn.top_k(logits, 3)
+
+    # add test ref result
+    with open(reference_file, 'r') as file1:
+        ref_data = json.load(file1)
+    ref_dict = {}
+    for item in ref_data:
+        ref_dict[item['image_id']] = int(item['label_id'])
 
     with tf.Session() as sess:
         saver = tf.train.Saver()
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
-            print('Restore the model from checkpoint %s' % ckpt.model_checkpoint_path)
+            print('Restore the model from checkpoint %s' %
+                  ckpt.model_checkpoint_path)
             # Restores from checkpoint
             saver.restore(sess, ckpt.model_checkpoint_path)
-            start_step = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+            start_step = int(ckpt.model_checkpoint_path.split(
+                '/')[-1].split('-')[-1])
         else:
             sess.run(tf.global_variables_initializer())
             start_step = 0
@@ -95,51 +119,86 @@ def train(train_dir, annotations, max_step, checkpoint_dir='./checkpoint/'):
         for step in range(start_step, start_step + max_step):
             start_time = time.time()
             x, y = scene_data.next_batch(BATCH_SIZE, IMAGE_SIZE)
-            sess.run(train_step, feed_dict={features: x, labels: y, keep_prob: 0.5})
-            if step % 50 == 0:
-                train_accuracy = sess.run(accuracy, feed_dict={features: x, labels: y, keep_prob: 1})
-                train_loss = sess.run(cross_entropy, feed_dict={features: x, labels: y, keep_prob: 1})
+            sess.run(train_step, feed_dict={
+                     features: x, labels: y, keep_prob: 0.5})
+            if step % 100 == 0:
+                train_accuracy = sess.run(
+                    accuracy, feed_dict={features: x, labels: y, keep_prob: 1})
+                train_loss = sess.run(cross_entropy, feed_dict={
+                                      features: x, labels: y, keep_prob: 1})
                 duration = time.time() - start_time
-                logger.info("step %d: training accuracy %g, loss is %g (%0.3f sec)" % (step, train_accuracy, train_loss, duration))
+
+                # add test result
+                submit_dict = {}
+                for test_image in test_images:
+                    temp_dict = {}
+                    x = scene_input.img_resize(os.path.join(
+                        test_dir, test_image), IMAGE_SIZE)
+                    predictions = np.squeeze(sess.run(indices, feed_dict={
+                        features: np.expand_dims(x, axis=0), keep_prob: 1}), axis=0)
+                    temp_dict['image_id'] = test_image
+                    temp_dict['label_id'] = predictions.tolist()
+                    submit_dict[temp_dict['image_id']] = temp_dict['label_id']
+
+                # eval test result                
+                eval_result = scene_eval.__eval_result(submit_dict, ref_dict)
+                print(eval_result["score"])
+
+                # add to log
+                logger.info("step %d: training accuracy %g, loss is %g (%0.3f sec), eval result is %s" % (
+                    step, train_accuracy, train_loss, duration, eval_result["score"]))
+
             if step % 1000 == 1:
                 saver.save(sess, CHECKFILE, global_step=step)
                 print('writing checkpoint at step %s' % step)
 
 
 def test(test_dir, checkpoint_dir='./checkpoint/'):
-    # predict the result 
+    # predict the result
     test_images = os.listdir(test_dir)
-    features = tf.placeholder("float32", shape=[None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL], name="features")
+    features = tf.placeholder(
+        "float32", shape=[None, IMAGE_SIZE, IMAGE_SIZE, IMAGE_CHANNEL], name="features")
     labels = tf.placeholder("float32", [None], name="labels")
     one_hot_labels = tf.one_hot(indices=tf.cast(labels, tf.int32), depth=80)
-    train_step, cross_entropy, logits, keep_prob = network.inference(features, one_hot_labels)
+    train_step, cross_entropy, logits, keep_prob = network.inference(
+        features, one_hot_labels)
     values, indices = tf.nn.top_k(logits, 3)
+
+    start_time = time.time()
 
     with tf.Session() as sess:
         saver = tf.train.Saver()
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)
         if ckpt and ckpt.model_checkpoint_path:
-            print('Restore the model from checkpoint %s' % ckpt.model_checkpoint_path)
+            print('Restore the model from checkpoint %s' %
+                  ckpt.model_checkpoint_path)
             # Restores from checkpoint
             saver.restore(sess, ckpt.model_checkpoint_path)
-            start_step = int(ckpt.model_checkpoint_path.split('/')[-1].split('-')[-1])
+            start_step = int(ckpt.model_checkpoint_path.split(
+                '/')[-1].split('-')[-1])
         else:
             raise Exception('no checkpoint find')
 
         result = []
         for test_image in test_images:
             temp_dict = {}
-            x = scene_input.img_resize(os.path.join(test_dir, test_image), IMAGE_SIZE)
-            predictions = np.squeeze(sess.run(indices, feed_dict={features: np.expand_dims(x, axis=0), keep_prob: 1}), axis=0)
+            x = scene_input.img_resize(os.path.join(
+                test_dir, test_image), IMAGE_SIZE)
+            predictions = np.squeeze(sess.run(indices, feed_dict={
+                                     features: np.expand_dims(x, axis=0), keep_prob: 1}), axis=0)
             temp_dict['image_id'] = test_image
             temp_dict['label_id'] = predictions.tolist()
             result.append(temp_dict)
-            print('image %s is %d,%d,%d' % (test_image, predictions[0], predictions[1], predictions[2]))
-        
+            # print('image %s is %d,%d,%d' %
+            #       (test_image, predictions[0], predictions[1], predictions[2]))
+
         with open('submit.json', 'w') as f:
             json.dump(result, f)
             print('write result json, num is %d' % len(result))
-       
+
+    end_time = time.time()
+    print(end_time - start_time)
+
 
 if __name__ == '__main__':
 
@@ -174,7 +233,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--test_dir',
         type=str,
-        default='../ai_challenger_scene_validation_20170908/scene_validation_images_20170908/',
+        default='../ai_challenger_scene_test_a_20180103/scene_test_a_images_20180103/',
         help="""\
         determine path of test images\
         """
@@ -188,9 +247,19 @@ if __name__ == '__main__':
         """
     )
 
+    parser.add_argument(
+        '--ref',
+        type=str,
+        default="../ai_challenger_scene_test_a_20180103/scene_test_a_annotations_20180103.json",
+        help="""\
+        Path to reference file\
+        """
+    )
+
     FLAGS = parser.parse_args()
     if FLAGS.mode == 'train':
-        train(FLAGS.train_dir, FLAGS. annotations, FLAGS.max_step)
+        train(FLAGS.train_dir, FLAGS. annotations,
+              FLAGS.max_step,FLAGS.test_dir, FLAGS.ref)
     elif FLAGS.mode == 'test':
         test(FLAGS.test_dir)
     else:
