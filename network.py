@@ -19,6 +19,10 @@ Network structure of a simple CNN network like Alexnet
 '''
 import tensorflow as tf
 LEARNINGRATE = 1e-3
+#LEARNINGRATE = 1e-2
+
+#ALPHA = 0.001 / 9.0
+ALPHA = 0.01 / 9.0 # Bigger L2
 
 def weight_variable(shape, stddev=0.1):
     initial = tf.truncated_normal(shape, stddev=stddev)
@@ -54,13 +58,13 @@ def inference(features, one_hot_labels):
     h_conv1 = tf.nn.relu(conv2d(features, W_conv1) + b_conv1)
     h_pool1 = max_pool_3x3(h_conv1)
     # norm1
-    norm1 = tf.nn.lrn(h_pool1, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name='norm1')
+    norm1 = tf.nn.lrn(h_pool1, 4, bias=1.0, alpha=ALPHA, beta=0.75, name='norm1')
     # conv2
     W_conv2 = weight_variable([5, 5, 64, 64], stddev=1e-2)
     b_conv2 = bias_variable([64])
     h_conv2 = tf.nn.relu(conv2d(norm1, W_conv2) + b_conv2)
     # norm2
-    norm2 = tf.nn.lrn(h_conv2, 4, bias=1.0, alpha=0.001 / 9.0, beta=0.75, name='norm2')
+    norm2 = tf.nn.lrn(h_conv2, 4, bias=1.0, alpha=ALPHA, beta=0.75, name='norm2')
     h_pool2 = max_pool_3x3(norm2)
 
     # conv3

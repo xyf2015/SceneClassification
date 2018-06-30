@@ -94,6 +94,8 @@ def train(
     values, indices = tf.nn.top_k(logits, 3)
 
     # add test ref result
+    # Set Random Seed
+    # np.random.seed(1234)
     with open(reference_file, 'r') as file1:
         ref_data = json.load(file1)
     ref_dict = {}
