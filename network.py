@@ -21,8 +21,8 @@ import tensorflow as tf
 LEARNINGRATE = 1e-3
 #LEARNINGRATE = 1e-2
 
-#ALPHA = 0.001 / 9.0
-ALPHA = 0.01 / 9.0 # Bigger L2
+ALPHA = 0.001 / 9.0
+#ALPHA = 0.01 / 9.0 # Bigger L2
 
 def weight_variable(shape, stddev=0.1):
     initial = tf.truncated_normal(shape, stddev=stddev)

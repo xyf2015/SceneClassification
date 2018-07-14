@@ -21,6 +21,8 @@ import PIL.Image as Image
 import json
 import os
 
+from DataAugmentation import DataAugmentation as DA
+
 class scene_data_fn(object):
 
     def __init__(self, image_path, label_path):
@@ -39,6 +41,9 @@ class scene_data_fn(object):
     def img_resize(self, imgpath, img_size):
         # resize the image to the specific size
         img = Image.open(imgpath)
+        # Data Augmentation
+        img = DA.randomMethod(img)
+        # DA.showImage(img)
         if (img.width > img.height):
             scale = float(img_size) / float(img.height)
             img = np.array(cv2.resize(np.array(img), (
